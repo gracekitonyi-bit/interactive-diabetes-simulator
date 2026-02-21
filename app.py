@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="Diabetes Simulator", layout="wide")
 
 st.title("🩺 Interactive Diabetes Progression Simulator")
-st.caption("Logistic progression + Glucose–Insulin ODE model")
+st.caption("Logistic progression + Glucose–Insulin ODE model (Euler vs RK4)")
 
 # --------------------------------------------------
 # Model selector
@@ -19,7 +19,7 @@ model_choice = st.sidebar.selectbox(
 )
 
 # --------------------------------------------------
-# Logistic model (Euler)
+# Logistic model (Euler discretization)
 # --------------------------------------------------
 def simulate_logistic(days, r, K, D0):
     t = np.arange(0, days + 1)
@@ -33,35 +33,58 @@ def simulate_logistic(days, r, K, D0):
 
     return t, D
 
-
 # --------------------------------------------------
-# Glucose–Insulin ODE system (Euler method)
+# Glucose–Insulin ODE RHS
 # dG/dt = intake - sGI - kgG
 # dI/dt = alpha G - kiI
 # --------------------------------------------------
-def simulate_glucose_insulin(days, dt, G0, I0, intake, s, alpha, kg, ki):
-    t = np.arange(0, days + dt, dt)
+def f_glucose_insulin(G, I, intake, s, alpha, kg, ki):
+    dG = intake - s * G * I - kg * G
+    dI = alpha * G - ki * I
+    return dG, dI
 
+# --------------------------------------------------
+# Euler solver
+# --------------------------------------------------
+def simulate_glucose_insulin_euler(days, dt, G0, I0, intake, s, alpha, kg, ki):
+    t = np.arange(0, days + dt, dt)
     G = np.zeros_like(t, dtype=float)
     I = np.zeros_like(t, dtype=float)
-
-    G[0] = G0
-    I[0] = I0
+    G[0], I[0] = G0, I0
 
     for i in range(1, len(t)):
-        dG = intake - s * G[i-1] * I[i-1] - kg * G[i-1]
-        dI = alpha * G[i-1] - ki * I[i-1]
-
+        dG, dI = f_glucose_insulin(G[i-1], I[i-1], intake, s, alpha, kg, ki)
         G[i] = G[i-1] + dt * dG
         I[i] = I[i-1] + dt * dI
-
-        if G[i] < 0:
-            G[i] = 0.0
-        if I[i] < 0:
-            I[i] = 0.0
+        G[i] = max(G[i], 0.0)
+        I[i] = max(I[i], 0.0)
 
     return t, G, I
 
+# --------------------------------------------------
+# RK4 solver
+# --------------------------------------------------
+def simulate_glucose_insulin_rk4(days, dt, G0, I0, intake, s, alpha, kg, ki):
+    t = np.arange(0, days + dt, dt)
+    G = np.zeros_like(t, dtype=float)
+    I = np.zeros_like(t, dtype=float)
+    G[0], I[0] = G0, I0
+
+    for i in range(1, len(t)):
+        G_prev, I_prev = G[i-1], I[i-1]
+
+        k1G, k1I = f_glucose_insulin(G_prev, I_prev, intake, s, alpha, kg, ki)
+        k2G, k2I = f_glucose_insulin(G_prev + 0.5*dt*k1G, I_prev + 0.5*dt*k1I, intake, s, alpha, kg, ki)
+        k3G, k3I = f_glucose_insulin(G_prev + 0.5*dt*k2G, I_prev + 0.5*dt*k2I, intake, s, alpha, kg, ki)
+        k4G, k4I = f_glucose_insulin(G_prev + dt*k3G, I_prev + dt*k3I, intake, s, alpha, kg, ki)
+
+        G[i] = G_prev + (dt/6.0) * (k1G + 2*k2G + 2*k3G + k4G)
+        I[i] = I_prev + (dt/6.0) * (k1I + 2*k2I + 2*k3I + k4I)
+
+        G[i] = max(G[i], 0.0)
+        I[i] = max(I[i], 0.0)
+
+    return t, G, I
 
 # --------------------------------------------------
 # Shared simulation settings
@@ -70,7 +93,7 @@ st.sidebar.header("Simulation Settings")
 days = st.sidebar.slider("Simulation Days", 30, 365, 180)
 
 # ==================================================
-# MODEL 1: Logistic Progression
+# MODEL 1: Logistic
 # ==================================================
 if model_choice == "Logistic Progression":
 
@@ -84,11 +107,9 @@ if model_choice == "Logistic Progression":
     adherence = st.sidebar.slider("Adherence (0-1)", 0.0, 1.0, 0.7)
     treatment_strength = st.sidebar.slider("Treatment strength", 0.0, 1.0, 0.5)
 
-    # Apply intervention effect
     r_int = r_base * (1 - adherence * treatment_strength)
     K_int = K_base * (1 - 0.2 * adherence * treatment_strength)
 
-    # Run simulations
     t, D_base = simulate_logistic(days, r_base, K_base, D0)
 
     if enable:
@@ -114,15 +135,20 @@ if model_choice == "Logistic Progression":
         st.latex(r"\frac{dD}{dt} = rD\left(1 - \frac{D}{K}\right)")
         st.write("• r controls growth speed")
         st.write("• K is long-run maximum")
-        st.write("• Intervention reduces r")
+        st.write("• Intervention reduces r (slows progression)")
 
 # ==================================================
-# MODEL 2: Glucose–Insulin ODE
+# MODEL 2: Glucose–Insulin ODE (Euler vs RK4)
 # ==================================================
 else:
+    st.sidebar.subheader("ODE Parameters")
+    dt = st.sidebar.selectbox("Time step (dt)", [0.1, 0.25, 0.5, 1.0], index=2)
 
-    st.sidebar.subheader("ODE Parameters (Euler)")
-    dt = st.sidebar.selectbox("Time step (dt)", [0.1, 0.5, 1.0], index=1)
+    method = st.sidebar.radio(
+        "Numerical Method",
+        ["Euler", "RK4", "Compare Euler vs RK4"],
+        index=2
+    )
 
     G0 = st.sidebar.slider("Initial Glucose G0", 50.0, 250.0, 120.0)
     I0 = st.sidebar.slider("Initial Insulin I0", 1.0, 80.0, 15.0)
@@ -133,20 +159,43 @@ else:
     kg = st.sidebar.slider("Glucose decay (kg)", 0.01, 1.0, 0.10)
     ki = st.sidebar.slider("Insulin clearance (ki)", 0.01, 1.0, 0.10)
 
-    # Run simulation
-    t, G, I = simulate_glucose_insulin(days, dt, G0, I0, intake, s, alpha, kg, ki)
-
     col1, col2 = st.columns([2, 1])
 
     with col1:
         fig, ax = plt.subplots()
-        ax.plot(t, G, label="Glucose G(t)")
-        ax.plot(t, I, label="Insulin I(t)")
+
+        if method == "Euler":
+            t, G, I = simulate_glucose_insulin_euler(days, dt, G0, I0, intake, s, alpha, kg, ki)
+            ax.plot(t, G, label="Glucose (Euler)")
+            ax.plot(t, I, label="Insulin (Euler)")
+            ax.set_title("Glucose–Insulin Dynamics (Euler)")
+
+        elif method == "RK4":
+            t, G, I = simulate_glucose_insulin_rk4(days, dt, G0, I0, intake, s, alpha, kg, ki)
+            ax.plot(t, G, label="Glucose (RK4)")
+            ax.plot(t, I, label="Insulin (RK4)")
+            ax.set_title("Glucose–Insulin Dynamics (RK4)")
+
+        else:
+            t, G_e, I_e = simulate_glucose_insulin_euler(days, dt, G0, I0, intake, s, alpha, kg, ki)
+            _, G_r, I_r = simulate_glucose_insulin_rk4(days, dt, G0, I0, intake, s, alpha, kg, ki)
+
+            ax.plot(t, G_e, label="Glucose (Euler)")
+            ax.plot(t, G_r, linestyle="--", label="Glucose (RK4)")
+            ax.plot(t, I_e, label="Insulin (Euler)")
+            ax.plot(t, I_r, linestyle="--", label="Insulin (RK4)")
+            ax.set_title("Euler vs RK4 Comparison")
+
         ax.set_xlabel("Time (days)")
         ax.set_ylabel("Level")
-        ax.set_title("Glucose–Insulin Dynamics (Euler Method)")
         ax.legend()
         st.pyplot(fig)
+
+        if method == "Compare Euler vs RK4":
+            # Simple numerical difference metric
+            diff_G = np.max(np.abs(G_e - G_r))
+            diff_I = np.max(np.abs(I_e - I_r))
+            st.info(f"Max absolute difference: Glucose = {diff_G:.3f}, Insulin = {diff_I:.3f}")
 
     with col2:
         st.subheader("Model Interpretation")
@@ -154,16 +203,15 @@ else:
         st.latex(r"\frac{dG}{dt} = \text{intake} - sGI - k_g G")
         st.latex(r"\frac{dI}{dt} = \alpha G - k_i I")
 
-        st.markdown("### State Variables")
-        st.markdown(r"- $G(t)$ = glucose level")
-        st.markdown(r"- $I(t)$ = insulin level")
-
-        st.markdown("### Interpretation")
+        st.markdown("### Why Euler vs RK4 matters")
         st.markdown(r"""
-- High $G$ increases insulin via $\alpha G$
-- Insulin reduces glucose via $sGI$
-- System converges to equilibrium
+- **Euler** is simple but can be inaccurate for larger $dt$  
+- **RK4** is much more accurate for the same $dt$  
+- Comparing them shows **numerical error**
         """)
 
-        st.markdown("### Next Step")
-        st.write("Next upgrade: RK4 method + Euler vs RK4 comparison.")
+        st.markdown("### What you should observe")
+        st.markdown(r"""
+- For **small dt (0.1)** Euler and RK4 look very similar  
+- For **large dt (1.0)** Euler may deviate more  
+        """)
