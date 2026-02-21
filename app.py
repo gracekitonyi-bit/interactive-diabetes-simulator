@@ -107,31 +107,39 @@ if model_choice == "Logistic Progression":
         ax.legend()
         st.pyplot(fig)
 
-    with col2:
-        st.subheader("Interpretation")
-        st.write(
-            """
-This is a simple *progression* model:
+   with col2:
+    st.subheader("Model Interpretation")
 
-- **r** controls how fast disease burden increases.
-- **K** is the long-run maximum disease burden.
-- **Intervention** reduces r (slows progression) depending on adherence.
-            """
-        )
+    st.markdown("### Glucose–Insulin ODE System")
 
-        st.markdown("### Current values")
-        st.write(f"Baseline r = {r_base:.3f}, K = {K_base:.2f}")
-        if enable:
-            st.write(f"Intervention r = {r_int:.3f}, K = {K_int:.2f}")
-        else:
-            st.write("Intervention is OFF")
+    # Nicely formatted equations (LaTeX)
+    st.latex(r"\frac{dG}{dt} = \text{intake} - sGI - k_g G")
+    st.latex(r"\frac{dI}{dt} = \alpha G - k_i I")
 
-        st.markdown("### Quick takeaway")
-        if enable and D_int is not None:
-            st.write("If the intervention curve stays lower, your strategy is reducing disease burden over time.")
-        else:
-            st.write("Turn on intervention to compare strategies.")
+    st.markdown("### State variables")
+    st.markdown(r"""
+- $G(t)$ : blood glucose level  
+- $I(t)$ : insulin level  
+    """)
 
+    st.markdown("### Parameter meaning")
+    st.markdown(r"""
+- $\text{intake}$ : dietary glucose input  
+- $s$ : insulin sensitivity (higher $s$ reduces glucose faster)  
+- $\alpha$ : pancreatic insulin response to glucose  
+- $k_g$ : glucose natural clearance rate  
+- $k_i$ : insulin clearance rate  
+    """)
+
+    st.markdown("### What you’re seeing (expected behavior)")
+    st.markdown(r"""
+- High $G(t)$ triggers insulin production via $\alpha G$.  
+- Increased $I(t)$ reduces glucose through the interaction term $sGI$.  
+- The system naturally settles toward an equilibrium (steady state).  
+    """)
+
+    st.markdown("### Next upgrade")
+    st.write("Next we add **RK4** and a **Euler vs RK4** comparison (numerical methods).")
 # =========================
 # MODEL 2: Glucose–Insulin ODE
 # =========================
