@@ -17,7 +17,11 @@ model_choice = st.sidebar.selectbox(
     "Select Model",
     ["Logistic Progression", "Glucose–Insulin ODE System"]
 )
-
+audience_mode = st.sidebar.radio(
+    "Audience Mode",
+    ["Community (Simple)", "Student/Research (Detailed)"],
+    index=0
+)
 # --------------------------------------------------
 # Logistic model (Euler discretization)
 # --------------------------------------------------
@@ -130,13 +134,18 @@ if model_choice == "Logistic Progression":
         ax.legend()
         st.pyplot(fig)
 
-    with col2:
-        st.subheader("Model Interpretation")
-        st.latex(r"\frac{dD}{dt} = rD\left(1 - \frac{D}{K}\right)")
-        st.write("• r controls growth speed")
-        st.write("• K is long-run maximum")
-        st.write("• Intervention reduces r (slows progression)")
+  if audience_mode == "Student/Research (Detailed)":
+    st.subheader("Model Interpretation (Research)")
+    st.latex(r"\frac{dG}{dt} = \text{intake} - sGI - k_g G")
+    st.latex(r"\frac{dI}{dt} = \alpha G - k_i I")
+    st.markdown("Euler vs RK4 shows numerical error (accuracy).")
 
+else:
+    st.subheader("What this means (Simple)")
+    st.write("This simulation shows how blood sugar (glucose) and insulin can change over time.")
+    st.write("• If insulin rises, glucose usually drops.")
+    st.write("• If insulin sensitivity is low, glucose may stay high longer.")
+    st.info("This tool is for learning, not diagnosis or medical advice.")
 # ==================================================
 # MODEL 2: Glucose–Insulin ODE (Euler vs RK4)
 # ==================================================
